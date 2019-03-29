@@ -468,7 +468,7 @@ async function parsePdf(url: string) {
 
         // Find the heading cells.
 
-        let applicationNumberHeadingCell = cells.find(cell => /^appno\./i.test(cell.elements.map(element => element.text).join("").replace(/\s/g, "")));
+        let applicationNumberHeadingCell = cells.find(cell => /^appno/i.test(cell.elements.map(element => element.text).join("").replace(/\s/g, "")));
         let receivedDateHeadingCell = cells.find(cell => /^dateofapplication/i.test(cell.elements.map(element => element.text).join("").replace(/\s/g, "")));
         let addressHeadingCell = cells.find(cell => /^locationofdevelopment/i.test(cell.elements.map(element => element.text).join("").replace(/\s/g, "")));
         let descriptionHeadingCell = cells.find(cell => /^descriptionofdev/i.test(cell.elements.map(element => element.text).join("").replace(/\s/g, "")));
@@ -500,7 +500,8 @@ async function parsePdf(url: string) {
                 continue;
             let applicationNumber = applicationNumberCell.elements.map(element => element.text).join("").trim().toUpperCase();
             if (!/[0-9]+\/[0-9A-Z]+\/[0-9]+/.test(applicationNumber)) { // an application number must be present, for example, "502/001/15"
-                console.log(`Ignoring "${applicationNumber}" because it is not formatted as an application number.`);
+                if (applicationNumber !== "" && applicationNumber.replace(/\s/g, "").toLowerCase() !== "appno")
+                    console.log(`Ignoring "${applicationNumber}" because it is not formatted as an application number.`);
                 continue;
             }
             console.log(`    Found development application ${applicationNumber}.`);
