@@ -478,6 +478,11 @@ function formatAddress(address: string) {
         address = streetAddress + (streetAddress === "" ? "" : ", ") + suburbName;
     }
 
+    // Ensure that the address includes the state "SA".
+
+    if (address !== "" && !/\bSA\b/g.test(address))
+        address += " SA";
+
     return address;
 }
 
