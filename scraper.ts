@@ -356,9 +356,9 @@ async function parseElements(page) {
 
 // Formats (and corrects) an address.
 
-function formatAddress(address: string) {
-    address = address.trim();
-    if (address.startsWith("LOT:") || address.startsWith("No Residential Address"))
+function formatAddress(applicationNumber: string, address: string) {
+    address = address.trim().replace(/[-–]+$/, "").replace(/\s\s+/g, " ").trim();  // remove trailing dashes and multiple white space characters
+    if (address.replace(/[\s,0-]/g, "") === "" || address.startsWith("No Residential Address"))  // ignores addresses such as "0 0, 0" and "-"
         return "";
 
     // Remove the comma in house numbers larger than 1000.  For example, the following addresses:
@@ -380,6 +380,8 @@ function formatAddress(address: string) {
 
     let postCode = undefined;
     let token = tokens.pop();
+    if (token === undefined)
+        return address;
     if (/^\d\d\d\d$/.test(token))
         postCode = token;
     else
@@ -389,6 +391,8 @@ function formatAddress(address: string) {
 
     let state = "SA";
     token = tokens.pop();
+    if (token === undefined)
+        return address;
     if ([ "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA" ].includes(token.toUpperCase()))
         state = token.toUpperCase();
     else
@@ -413,28 +417,60 @@ function formatAddress(address: string) {
     // instead of "WELL" because there actually is a street named "BELL ROAD").
     //
     //     2800 Woods BELL ROAD, COLEBATCH SA 5266
+    //
+    // This also allows for addresses that contain hundred names such as the following:
+    //
+    //     Sec 26 Hd Palabie
+    //     Lot no 1, Standley Road, Sect 16, Hundred of Pygery
 
     let suburbName = undefined;
-    for (let index = 4; index >= 1; index--) {
-        let suburbNameMatch = <string>didYouMean(tokens.slice(-index).join(" "), Object.keys(SuburbNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
-        if (suburbNameMatch !== null) {
-            suburbName = SuburbNames[suburbNameMatch];
-            tokens.splice(-index, index);  // remove elements from the end of the array           
-            break;
+    let hasHundredName = false;
+
+    for (let index = 5; index >= 1; index--) {
+        let tryHundredName = tokens.slice(-index).join(" ").toUpperCase();
+        if (tryHundredName.startsWith("HD OF ") || tryHundredName.startsWith("HUNDRED OF") || tryHundredName.startsWith("HD ") || tryHundredName.startsWith("HUNDRED ")) {
+            tryHundredName = tryHundredName.replace(/^HD OF /, "").replace(/^HUNDRED OF /, "").replace(/^HD /, "").replace(/^HUNDRED /, "").trim();
+            let hundredNameMatch = <string>didYouMean(tryHundredName, Object.keys(HundredNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
+            if (hundredNameMatch !== null) {
+                hasHundredName = true;
+                let suburbNames = HundredNames[hundredNameMatch];
+                if (suburbNames.length === 1) {  // if a unique suburb exists for the hundred then use that suburb
+                    suburbName = SuburbNames[suburbNames[0]];
+                    tokens.splice(-index, index);  // remove elements from the end of the array
+                }
+                break;
+            }
+        }
+    }
+
+    // Only search for a suburb name if there was no hundred name (because a suburb name is
+    // unlikely to appear before a hundred name).
+
+    if (!hasHundredName) {
+        for (let index = 4; index >= 1; index--) {
+            let trySuburbName = tokens.slice(-index).join(" ");
+            let suburbNameMatch = <string>didYouMean(trySuburbName, Object.keys(SuburbNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
+            if (suburbNameMatch !== null) {
+                suburbName = SuburbNames[suburbNameMatch];
+                tokens.splice(-index, index);  // remove elements from the end of the array           
+                break;
+            }
         }
     }
 
     // Expand any street suffix (for example, this converts "ST" to "STREET").
 
     token = tokens.pop();
-    let streetSuffix = StreetSuffixes[token.toUpperCase()];
-    if (streetSuffix === undefined)
-        streetSuffix = Object.values(StreetSuffixes).find(streetSuffix => streetSuffix === token.toUpperCase());  // the street suffix is already expanded
-
-    if (streetSuffix === undefined)
-        tokens.push(token);  // unrecognised street suffix
-    else
-        tokens.push(streetSuffix);  // add back the expanded street suffix
+    if (token !== undefined) {
+        token = token.trim().replace(/,+$/, "").trim();  // removes trailing commas
+        let streetSuffix = StreetSuffixes[token.toUpperCase()];
+        if (streetSuffix === undefined)
+            streetSuffix = Object.values(StreetSuffixes).find(streetSuffix => streetSuffix === token.toUpperCase());  // the street suffix is already expanded
+        if (streetSuffix === undefined)
+            tokens.push(token);  // unrecognised street suffix
+        else
+            tokens.push(streetSuffix);  // add back the expanded street suffix
+    }
 
     // Pop tokens from the end of the array until a valid street name is encountered (allowing
     // for a few spelling errors).  Similar to the examination of suburb names, this examines
@@ -442,7 +478,8 @@ function formatAddress(address: string) {
 
     let streetName = undefined;
     for (let index = 5; index >= 1; index--) {
-        let streetNameMatch = <string>didYouMean(tokens.slice(-index).join(" "), Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
+        let tryStreetName = tokens.slice(-index).join(" ").trim().replace(/,+$/, "").trim();  // allows for commas after the street name
+        let streetNameMatch = <string>didYouMean(tryStreetName, Object.keys(StreetNames), { caseSensitive: false, returnType: didyoumean.ReturnTypeEnums.FIRST_CLOSEST_MATCH, thresholdType: didyoumean.ThresholdTypeEnums.EDIT_DISTANCE, threshold: 1, trimSpaces: true });
         if (streetNameMatch !== null) {
             streetName = streetNameMatch;
             let suburbNames = StreetNames[streetNameMatch];
@@ -458,7 +495,7 @@ function formatAddress(address: string) {
 
             break;
         }
-    }    
+    }
 
     // If a post code was included in the original address then use it to override the post code
     // included in the suburb name (because the post code in the original address is more likely
@@ -466,6 +503,13 @@ function formatAddress(address: string) {
 
     if (postCode !== undefined && suburbName !== undefined)
         suburbName = suburbName.replace(/\s+\d\d\d\d$/, " " + postCode);
+
+    // Do not allow an address that does not have a suburb name.
+
+    if (suburbName === undefined) {
+        console.log(`Ignoring the development application "${applicationNumber}" because a suburb name could not be determined for the address: ${address}`);
+        return "";
+    }
 
     // Reconstruct the address with a comma between the street address and the suburb.
 
@@ -644,7 +688,7 @@ async function parsePdf(url: string) {
             }
 
             let address = addressCell.elements.map(element => element.text).join(" ").replace(/\s\s+/g, " ").trim();
-            address = formatAddress(address);
+            address = formatAddress(applicationNumber, address);
 
             if (address === "") {  // an address must be present
                 console.log(`Ignoring the development application "${applicationNumber}" because the address is blank.`);
@@ -720,9 +764,11 @@ async function main() {
         SuburbNames[suburbTokens[0].trim()] = suburbTokens[1].trim();
     }
 
-    HundredNames = [];
-    for (let line of fs.readFileSync("hundrednames.txt").toString().replace(/\r/g, "").trim().split("\n"))
-        HundredNames.push(line.trim().toUpperCase());
+    HundredNames = {};
+    for (let line of fs.readFileSync("hundrednames.txt").toString().replace(/\r/g, "").trim().split("\n")) {
+        let hundredNameTokens = line.toUpperCase().split(",");
+        HundredNames[hundredNameTokens[0].trim()] = hundredNameTokens[1].trim().split(";");
+    }
 
     // Read the main page of development applications.
 
