@@ -17,7 +17,7 @@ import didYouMean, * as didyoumean from "didyoumean2";
 
 sqlite3.verbose();
 
-const DevelopmentApplicationsUrl = "https://www.orroroo.sa.gov.au/page.aspx?u=527";
+const DevelopmentApplicationsUrl = "https://www.orroroo.sa.gov.au/development-and-health/development-register";
 const CommentUrl = "mailto:council@orroroo.sa.gov.au";
 
 const Tolerance = 3;
@@ -779,7 +779,7 @@ async function main() {
     let $ = cheerio.load(body);
 
     let pdfUrls: string[] = [];
-    for (let element of $("div.unityHtmlArticle p a").get()) {
+    for (let element of $("div.content-container p a").get()) {
         let pdfUrl = new urlparser.URL(element.attribs.href, DevelopmentApplicationsUrl).href
         if (pdfUrl.toLowerCase().includes(".pdf"))
             if (!pdfUrls.some(url => url === pdfUrl))
